@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<DirectionalLayout
+    xmlns:ohos="http://schemas.huawei.com/res/ohos"
+    ohos:height="match_parent"
+    ohos:width="match_parent"
+    ohos:orientation="vertical">
+
+    <ohos.agp.components.surfaceprovider.SurfaceProvider
+        ohos:id="$+id:surfaceProvider"
+        ohos:height="0vp"
+        ohos:width="match_parent"
+        ohos:weight="1"/>
+
+    <ohos.agp.components.surfaceprovider.SurfaceProvider
+        ohos:id="$+id:imageProvider"
+        ohos:top_margin="50vp"
+        ohos:height="0vp"
+        ohos:width="match_parent"
+        ohos:weight="1"/>
+
+</DirectionalLayout>
