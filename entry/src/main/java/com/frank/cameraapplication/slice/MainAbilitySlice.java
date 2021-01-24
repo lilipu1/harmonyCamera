@@ -3,8 +3,10 @@ package com.frank.cameraapplication.slice;
 import com.frank.cameraapplication.ResourceTable;
 import ohos.aafwk.ability.AbilitySlice;
 import ohos.aafwk.content.Intent;
+import ohos.agp.components.Component;
 import ohos.agp.components.surfaceprovider.SurfaceProvider;
 import ohos.agp.graphics.SurfaceOps;
+import ohos.agp.graphics.TextureHolder;
 import ohos.agp.window.dialog.ToastDialog;
 import ohos.eventhandler.EventHandler;
 import ohos.eventhandler.EventRunner;
@@ -13,12 +15,18 @@ import ohos.hiviewdfx.HiLog;
 import ohos.hiviewdfx.HiLogLabel;
 import ohos.media.camera.CameraKit;
 import ohos.media.camera.device.*;
+import ohos.media.image.Image;
 import ohos.media.image.ImageReceiver;
+import ohos.media.image.common.ImageFormat;
 import ohos.media.image.common.Size;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.List;
 import java.util.UUID;
 
+import static ohos.media.camera.device.Camera.FrameConfigType.FRAME_CONFIG_PICTURE;
 import static ohos.media.camera.device.Camera.FrameConfigType.FRAME_CONFIG_PREVIEW;
 
 public class MainAbilitySlice extends AbilitySlice {
@@ -31,17 +39,94 @@ public class MainAbilitySlice extends AbilitySlice {
     private boolean isImageProviderCreated;
     private ImageReceiver imageReceiver;
     private Size pictureSize;
+    private ImageSaver imageSaver;
+    private String cameraId;
+    private Camera camera;
 
     private final ImageReceiver.IImageArrivalListener imageArrivalListener = new ImageReceiver.IImageArrivalListener() {
         @Override
         public void onImageArrival(ImageReceiver imageReceiver) {
+            debug("收到图片");
             StringBuffer fileName = new StringBuffer("picture_");
             fileName.append(UUID.randomUUID()).append(".jpg"); // 定义生成图片文件名
             File myFile = new File(getContext().getCacheDir(), fileName.toString()); // 创建图片文件
-            //imageSaver = new ImageSaver(imageReceiver.readNextImage(), myFile); // 创建一个读写线程任务用于保存图片
-            //cameraEventHandler.postTask(imageSaver); // 执行读写线程任务生成图片
+            imageSaver = new ImageSaver(imageReceiver.readNextImage(), myFile); // 创建一个读写线程任务用于保存图片
+            cameraEventHandler.postTask(imageSaver); // 执行读写线程任务生成图片
         }
     };
+
+    class ImageSaver implements Runnable {
+        private final Image myImage;
+        private final File myFile;
+
+        ImageSaver(Image image, File file) {
+            myImage = image;
+            myFile = file;
+        }
+
+        @Override
+        public void run() {
+            Image.Component component = myImage.getComponent(ImageFormat.ComponentType.JPEG);
+            byte[] bytes = new byte[component.remaining()];
+            component.read(bytes);
+            FileOutputStream output = null;
+            try {
+                output = new FileOutputStream(myFile);
+                output.write(bytes); // 写图像数据
+            } catch (IOException e) {
+                debug("save picture occur exception!");
+            } finally {
+                myImage.release();
+                if (output != null) {
+                    try {
+                        output.close(); // 关闭流
+                        debug("存储照片成功");
+                    } catch (IOException e) {
+                        debug("image release occur exception!");
+                    }
+                }
+            }
+        }
+    }
+
+    private void capture() {
+        // 获取拍照配置模板
+        FrameConfig.Builder framePictureConfigBuilder = camera.getFrameConfigBuilder(FRAME_CONFIG_PICTURE);
+        // 配置拍照 Surface
+        framePictureConfigBuilder.addSurface(imageProvider.getSurfaceOps().get().getSurface());
+        // 配置拍照其他参数
+        framePictureConfigBuilder.setImageRotation(90);
+        try {
+            // 启动单帧捕获(拍照)
+            camera.triggerSingleCapture(framePictureConfigBuilder.build());
+            debug("启动拍照");
+        } catch (IllegalArgumentException e) {
+            debug("Argument Exception:" + e.getMessage());
+        } catch (IllegalStateException e) {
+            debug("State Exception:" + e.getMessage());
+        } catch (Exception e) {
+            debug("预览异常：" + e.getMessage());
+        }
+    }
+
+    private void takePictureInit() {
+        List<Size> pictureSizes = CameraKit.getInstance(this).getCameraAbility(cameraId).getSupportedSizes(ImageFormat.JPEG); // 获取拍照支持分辨率列表
+        pictureSize = getPictureSize(pictureSizes); // 根据拍照要求选择合适的分辨率
+        imageReceiver = ImageReceiver.create(Math.max(pictureSize.width, pictureSize.height),
+                Math.min(pictureSize.width, pictureSize.height), ImageFormat.JPEG, 1); // 创建 ImageReceiver 对象，注意 creat 函数中宽度要大于高度； 5 为最大支持的图像数，请根据实际设置。
+        imageReceiver.setImageArrivalListener(imageArrivalListener);
+    }
+
+    private Size getPictureSize(List<Size> pictureSizes) {
+        Size pictureSize = null;
+        for (Size size : pictureSizes) {
+            if ((float) size.width / size.height == 4 / 3f) {
+                pictureSize = size;
+                return pictureSize;
+            }
+        }
+        return null;
+    }
 
     private void debug(String errorMsg) {
         HiLog.error(hiLogLabel, errorMsg);
@@ -90,6 +175,13 @@ public class MainAbilitySlice extends AbilitySlice {
 
             }
         });
+
+        findComponentById(ResourceTable.Id_button_take_picture).setClickedListener(new Component.ClickedListener() {
+            @Override
+            public void onClick(Component component) {
+                capture();
+            }
+        });
     }
 
     FrameStateCallback frameStateCallback = new FrameStateCallback() {
@@ -105,9 +197,11 @@ public class MainAbilitySlice extends AbilitySlice {
         public void onCreated(Camera camera) {
             super.onCreated(camera);
             debug("相机创建成功");
+            takePictureInit();
+            MainAbilitySlice.this.camera = camera;
             cameraConfigBuilder = camera.getCameraConfigBuilder();
             cameraConfigBuilder.addSurface(previewProvider.getSurfaceOps().get().getSurface());
-            cameraConfigBuilder.addSurface(imageProvider.getSurfaceOps().get().getSurface());
+            cameraConfigBuilder.addSurface(imageReceiver.getRecevingSurface());
             cameraConfigBuilder.setFrameStateCallback(frameStateCallback, cameraEventHandler);
             try {
                 camera.configure(cameraConfigBuilder.build());
@@ -132,6 +226,8 @@ public class MainAbilitySlice extends AbilitySlice {
             FrameConfig frameConfig = frameConfigBuilder.build();
             try {
                 int triggerId = camera.triggerLoopingCapture(frameConfig);
+                debug("预览id:" + triggerId);
+
             } catch (Exception e) {
                 debug("预览失败:" + e.getMessage());
                 e.printStackTrace();
@@ -188,6 +284,7 @@ public class MainAbilitySlice extends AbilitySlice {
         if (ids.length == 0) {
             new ToastDialog(this).setText("设备无可用相机").show();
         }
+        cameraId = ids[0];
         cameraKit.createCamera(ids[0], cameraStateCallback, cameraEventHandler);
     }
 
@@ -199,5 +296,23 @@ public class MainAbilitySlice extends AbilitySlice {
     @Override
     public void onForeground(Intent intent) {
         super.onForeground(intent);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        debug("stop");
+    }
+
+    private void releaseCamera() {
+        if (camera != null) {
+            // 关闭相机和释放资源
+            camera.release();
+            camera = null;
+        }
+        // 拍照配置模板置空
+        //framePictureConfigBuilder = null;
+        // 预览配置模板置空
+        //previewFrameConfig = null;
     }
 }

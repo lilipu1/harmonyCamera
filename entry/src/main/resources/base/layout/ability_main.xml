@@ -11,9 +11,19 @@
         ohos:width="match_parent"
         ohos:weight="1"/>
 
+    <Button
+        ohos:top_margin="10vp"
+        ohos:bottom_margin="10vp"
+        ohos:id="$+id:button_take_picture"
+        ohos:height="40vp"
+        ohos:width="match_content"
+        ohos:text="拍照"
+        ohos:text_alignment="center"
+        ohos:text_color="#ff0000"
+        ohos:text_size="30vp"/>
+
     <ohos.agp.components.surfaceprovider.SurfaceProvider
         ohos:id="$+id:imageProvider"
-        ohos:top_margin="50vp"
         ohos:height="0vp"
         ohos:width="match_parent"
         ohos:weight="1"/>
